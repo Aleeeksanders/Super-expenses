@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gastos Mensuales</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <script>
+        function toggleReturnDate() {
+            var category = document.getElementById('category').value;
+            var returnDateField = document.getElementById('return_date_field');
+            if (category === 'Prestado') {
+                returnDateField.style.display = 'block';
+            } else {
+                returnDateField.style.display = 'none';
+            }
+        }
+
+        function toggleCardField() {
+            var paymentMethod = document.getElementById('payment_method').value;
+            var cardField = document.getElementById('card_field');
+            if (paymentMethod === 'Tarjeta de Débito' || paymentMethod === 'Tarjeta de Crédito') {
+                cardField.style.display = 'block';
+            } else {
+                cardField.style.display = 'none';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            toggleCardField();  // Inicializa el campo de tarjeta correctamente al cargar la página
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-5">Gastos Mensuales</h1>
+        <h2>Bienvenido, {{ user['username'] }}!</h2>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">Logout</a>
+        {% if user['role'] == 'admin' %}
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">Admin Dashboard</a>
+        {% endif %}
+        <h2>Banco Inicial: {{ user['initial_bank'] }}</h2>
+        <h2>Fondo Restante: {{ "{:,.0f}".format(current_fund) }} CLP</h2>
+        <h2>Saldo en Efectivo: {{ "{:,.0f}".format(cash_balance) }} CLP</h2>
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div class="alert alert-info">
+              {{ messages[0] }}
+            </div>
+          {% endif %}
+        {% endwith %}
+        
+        <form action="{{ url_for('update_budget') }}" method="post" class="mb-5">
+            {{ budget_form.hidden_tag() }}
+            <div class="form-group">
+                <label for="total_budget">Presupuesto Total</label>
+                {{ budget_form.total_budget(class="form-control") }}
+            </div>
+            <button type="submit" class="btn btn-primary">Actualizar Presupuesto</button>
+        </form>
+
+        <form action="{{ url_for('add_card_route') }}" method="post" class="mb-5">
+            {{ card_form.hidden_tag() }}
+            <div class="form-group">
+                <label for="name">Nombre de la Tarjeta</label>
+                {{ card_form.name(class="form-control") }}
+            </div>
+            <div class="form-group">
+                <label for="balance">Saldo Inicial</label>
+                {{ card_form.balance(class="form-control") }}
+            </div>
+            <div class="form-group">
+                <label for="source">Origen del Saldo</label>
+                {{ card_form.source(class="form-control") }}
+            </div>
+            <div class="form-group">
+                <label for="card_type">Tipo de Tarjeta</label>
+                {{ card_form.card_type(class="form-control") }}
+            </div>
+            <button type="submit" class="btn btn-primary">Agregar Tarjeta</button>
+        </form>
+
+        <h3>Tarjetas</h3>
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Saldo</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for card in cards %}
+                <tr>
+                    <td>{{ card['name'] }}</td>
+                    <td>{{ "{:,.0f}".format(card['balance']) }} CLP</td>
+                    <td>
+                        <form action="{{ url_for('delete_card', card_id=card['id']) }}" method="post" style="display:inline;">
+                            <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
+                        </form>
+                        <form action="{{ url_for('add_balance_to_card', card_id=card['id']) }}" method="post" style="display:inline;">
+                            <input type="number" name="amount" class="form-control form-control-sm" placeholder="Monto" required>
+                            <button type="submit" class="btn btn-primary btn-sm">Añadir Saldo</button>
+                        </form>
+                        <form action="{{ url_for('withdraw_from_card_route') }}" method="post" style="display:inline;">
+                            <input type="number" name="amount" class="form-control form-control-sm" placeholder="Monto" required>
+                            <input type="hidden" name="card_id" value="{{ card['id'] }}">
+                            <button type="submit" class="btn btn-warning btn-sm">Girar Dinero</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h3>Girar Dinero en Efectivo</h3>
+        <form action="{{ url_for('withdraw_cash_route') }}" method="post" class="mb-5">
+            <div class="form-group">
+                <label for="amount">Monto a Girar</label>
+                <input type="number" name="amount" class="form-control" placeholder="Monto" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Girar Dinero</button>
+        </form>
+
+
+        <h3>Transferir Saldo entre Tarjetas o Efectivo</h3>
+        <form action="{{ url_for('transfer_balance') }}" method="post" class="mb-5">
+            <div class="form-group">
+                <label for="from_card_id">Desde</label>
+                <select name="from_card_id" class="form-control" required>
+                    <option value="cash">Efectivo</option>
+                    {% for card in cards %}
+                    <option value="{{ card['id'] }}">{{ card['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="to_card_id">Hacia</label>
+                <select name="to_card_id" class="form-control" required>
+                    <option value="cash">Efectivo</option>
+                    {% for card in cards %}
+                    <option value="{{ card['id'] }}">{{ card['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="amount">Monto</label>
+                <input type="number" name="amount" class="form-control" placeholder="Monto" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Transferir Saldo</button>
+        </form>
+
+        <form action="/add" method="post" class="mb-5">
+            {{ form.hidden_tag() }}
+            <div class="form-group">
+                <label for="date">Fecha</label>
+                {{ form.date(class="form-control") }}
+            </div>
+            <div class="form-group">
+                <label for="description">Descripción</label>
+                {{ form.description(class="form-control") }}
+            </div>
+            <div class="form-group">
+                <label for="amount">Monto</label>
+                {{ form.amount(class="form-control") }}
+            </div>
+            <div class="form-group">
+                <label for="category">Categoría</label>
+                {{ form.category(class="form-control", id="category", onchange="toggleReturnDate()") }}
+            </div>
+            <div class="form-group">
+                <label for="payment_method">Método de Pago</label>
+                {{ form.payment_method(class="form-control", id="payment_method", onchange="toggleCardField()") }}
+            </div>
+            <div class="form-group" id="card_field" style="display:none;">
+                <label for="card">Tarjeta</label>
+                {{ form.card(class="form-control") }}
+            </div>
+            <div class="form-group" id="return_date_field" style="display:none;">
+                <label for="return_date">Fecha de Devolución</label>
+                {{ form.return_date(class="form-control") }}
+            </div>
+            <button type="submit" class="btn btn-primary">Agregar Gasto</button>
+        </form>
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Descripción</th>
+                    <th>Monto</th>
+                    <th>Categoría</th>
+                    <th>Método de Pago</th>
+                    <th>Tarjeta</th>
+                    <th>Fecha de Devolución</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for expense in expenses %}
+                <tr>
+                    <td>{{ expense['date'] }}</td>
+                    <td>{{ expense['description'] }}</td>
+                    <td>{{ "{:,.0f}".format(expense['amount']) }} CLP</td>
+                    <td>{{ expense['category'] }}</td>
+                    <td>{{ expense['payment_method'] }}</td>
+                    <td>{{ expense['card_name'] if expense['payment_method'] in ['Tarjeta de Débito', 'Tarjeta de Crédito'] else 'N/A' }}</td>
+                    <td>{{ expense['return_date'] if expense['category'] == 'Prestado' else 'N/A' }}</td>
+                    <td>
+                        <form action="{{ url_for('delete', expense_id=expense['id']) }}" method="post" style="display:inline;">
+                            <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
